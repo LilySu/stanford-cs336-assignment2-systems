@@ -1,3 +1,5 @@
+.DS_Store
+
 # --- Virtual Environments (Dependencies) ---
 .venv/
 venv/

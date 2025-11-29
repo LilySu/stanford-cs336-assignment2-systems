@@ -1,3 +1,26 @@
+# --- Virtual Environments (Dependencies) ---
+.venv/
+venv/
+env/
+
+# --- Large Data Files ---
+data/owt_valid.txt
+data/owt_valid.bin
+data/owt_train.txt
+data/owt_train.bin
+data/TinyStoriesV2-GPT4-train.txt
+data/TinyStoriesV2-GPT4-train.bin
+
+# --- General Safety (Optional but Recommended) ---
+# Ignore all bin and large text files in the data folder
+# so you don't accidentally freeze again with new datasets
+data/*.bin
+data/*.txt
+__pycache__/
+*.pyc
+
+uv.lock
+
 336_a2_test_venv/
 cs336-spring2024-assignment-2-submission.zip
 test_results.xml

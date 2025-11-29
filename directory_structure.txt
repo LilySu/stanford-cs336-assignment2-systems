@@ -1,0 +1,48 @@
+.
+├── CHANGELOG.md
+├── LICENSE
+├── README.md
+├── cs336-basics
+│   ├── README.md
+│   ├── cs336_basics
+│   │   ├── __init__.py
+│   │   ├── data.py
+│   │   ├── model.py
+│   │   ├── nn_utils.py
+│   │   └── optimizer.py
+│   └── pyproject.toml
+├── cs336_spring2025_assignment2_systems.pdf
+├── cs336_systems
+│   ├── __init__.py
+│   ├── __pycache__
+│   │   └── __init__.cpython-311.pyc
+│   ├── benchmark.py
+│   └── train.py
+├── data
+│   ├── TinyStoriesV2-GPT4-train.bin
+│   ├── TinyStoriesV2-GPT4-train.txt
+│   ├── TinyStoriesV2-GPT4-valid.bin
+│   ├── TinyStoriesV2-GPT4-valid.txt
+│   ├── owt_train.bin
+│   ├── owt_train.txt
+│   ├── owt_valid.bin
+│   └── owt_valid.txt
+├── directory_structure.txt
+├── pyproject.toml
+├── test_and_make_submission.sh
+├── tests
+│   ├── __init__.py
+│   ├── adapters.py
+│   ├── common.py
+│   ├── conftest.py
+│   ├── fixtures
+│   │   ├── ddp_test_data.pt
+│   │   └── ddp_test_labels.pt
+│   ├── test_attention.py
+│   ├── test_ddp.py
+│   ├── test_ddp_individual_parameters.py
+│   └── test_sharded_optimizer.py
+├── uv.lock
+└── writeup.pdf
+
+8 directories, 38 files

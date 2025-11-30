@@ -69,3 +69,5 @@ should be able to unzip your submitted tarball and run
 uv venv --python 3.11.5
 
 source .venv/bin/activate
+
+python cs336_systems/benchmark.py --suite

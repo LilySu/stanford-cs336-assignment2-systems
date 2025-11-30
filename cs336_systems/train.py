@@ -13,7 +13,7 @@ from tqdm import tqdm
 # Ensure we can import from cs336_basics
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cs336_basics.models import BasicsTransformerLM
+from cs336_basics.model import BasicsTransformerLM
 from cs336_basics.optimizer import AdamW, get_cosine_lr
 from cs336_basics.nn_utils import cross_entropy, clip_gradient
 
@@ -287,6 +287,7 @@ def main():
     args.val_data = prepare_data_if_needed(args.val_data)
     
     # Load Memory Maps
+    logger.info(f"Memory mapping data (mode='r')... this will NOT load {args.train_data} into RAM.")
     train_data = np.memmap(args.train_data, dtype=np.uint16, mode='r')
     val_data = np.memmap(args.val_data, dtype=np.uint16, mode='r')
 

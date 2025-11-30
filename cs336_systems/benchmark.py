@@ -1,138 +1,148 @@
-import timeit
-import torch
 import argparse
-import statistics
-import logging
 import sys
 import os
+import torch
+import logging
 
-# Add the parent directory to sys.path to allow importing cs336_basics 
-# if running directly from the folder, though running from root is preferred.
+# Ensure we can import from cs336_basics and local utils
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from cs336_basics.models import BasicsTransformerLM
+from cs336_basics.model import BasicsTransformerLM
+import benchmark_utils as utils
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
-def benchmark(args):
-    # 1. Setup Device
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type == 'cpu':
-        logger.warning("WARNING: Benchmarking on CPU. Results will be slow and not representative of GPU training.")
-
-    # 2. Initialize Model
-    logger.info(f"Initializing model with d_model={args.d_model}, layers={args.num_layers}...")
-    model = BasicsTransformerLM(
-        vocab_size=args.vocab_size,
-        context_length=args.context_length,
-        d_model=args.d_model,
-        num_layers=args.num_layers,
-        num_heads=args.num_heads,
-        d_ff=args.d_ff,
-        rope_theta=10000.0, # Default per your provided code
-    ).to(device)
-
-    # 3. Generate Random Batch
-    # Input shape: (batch_size, context_length)
-    input_ids = torch.randint(
-        0, 
-        args.vocab_size, 
-        (args.batch_size, args.context_length), 
-        device=device,
-        dtype=torch.int64 # Expecting Int/Long for embeddings
-    )
-
-    # Gradient handling
-    if args.mode == "backward":
-        model.train()
-        # We don't explicitly need input gradients, but we need parameter gradients
-        for param in model.parameters():
-            param.requires_grad = True
-    else:
-        model.eval()
-
-    # Define the step function based on mode
-    def run_forward():
-        _ = model(input_ids)
-
-    def run_forward_backward():
-        # Clear previous gradients
-        model.zero_grad(set_to_none=True)
-        # Forward
-        logits = model(input_ids)
-        # Create a dummy loss (scalar) to backpropagate
-        # We sum output to get a scalar, then call backward
-        loss = logits.sum() 
-        loss.backward()
-
-    # Select the function to benchmark
-    step_fn = run_forward_backward if args.mode == "backward" else run_forward
-
-    # 4. Warmup
-    logger.info(f"Running {args.warmup_steps} warmup steps ({args.mode})...")
-    for _ in range(args.warmup_steps):
-        step_fn()
-        if device.type == 'cuda':
-            torch.cuda.synchronize()
-
-    # 5. Timing
-    logger.info(f"Measuring {args.num_steps} steps...")
-    timings = []
+def run_suite(device):
+    """
+    Runs the full benchmark suite for all model sizes defined in the assignment
+    and prints the table (Part b).
+    """
+    logger.info(f"Starting Benchmark Suite on {device}...")
     
-    # Use timeit.default_timer for high resolution
-    timer = timeit.default_timer
+    # 1. Get all model specifications
+    all_specs = utils.get_model_specs()
+    
+    # 2. Filter for CPU (Small, Medium, Large only) to prevent stalling
+    #    We create a new dictionary with only the keys we can handle right now.
+    specs = {k: all_specs[k] for k in ["small", "medium"]} # , "large"
 
-    for i in range(args.num_steps):
-        # Synchronize before starting timer to ensure previous GPU ops are done
-        if device.type == 'cuda':
-            torch.cuda.synchronize()
-            
-        start_time = timer()
+    # --- WHEN YOU HAVE A GPU, UNCOMMENT THE LINE BELOW AND REMOVE THE FILTER ABOVE ---
+    # specs = all_specs 
+    # -------------------------------------------------------------------------------
+
+    results = []
+
+    # Constants for the suite
+    VOCAB_SIZE = 10000
+    BATCH_SIZE = 4
+    CONTEXT_LENGTH = 128
+    
+    for size_name, config in specs.items():
+        logger.info(f"Benchmarking {size_name.upper()}...")
         
-        step_fn()
+        # Initialize Model
+        try:
+            model = BasicsTransformerLM(
+                vocab_size=VOCAB_SIZE,
+                context_length=CONTEXT_LENGTH,
+                d_model=config["d_model"],
+                num_layers=config["num_layers"],
+                num_heads=config["num_heads"],
+                d_ff=config["d_ff"],
+                rope_theta=10000.0,
+            ).to(device)
+
+        except RuntimeError as e:
+            if "out of memory" in str(e):
+                logger.error(f"OOM for {size_name}")
+                results.append({"Size": size_name, "Forward (ms)": "OOM", "Backward (ms)": "OOM"})
+                torch.cuda.empty_cache()
+                continue
+            raise e
+
+        # Generate Batch
+        input_ids = utils.generate_batch(VOCAB_SIZE, BATCH_SIZE, CONTEXT_LENGTH, device)
+
+        # Forward
+        fwd_avg, fwd_std = utils.benchmark_pass(model, input_ids, "forward", warmup_steps=5, num_steps=10)
         
-        # Synchronize after step to ensure we time the actual GPU execution
+        # Backward
+        bwd_avg, bwd_std = utils.benchmark_pass(model, input_ids, "backward", warmup_steps=5, num_steps=10)
+        
+        results.append({
+            "Size": size_name,
+            "d_model": config["d_model"],
+            "d_ff": config["d_ff"],
+            "num_layers": config["num_layers"],
+            "num_heads": config["num_heads"],
+            "Forward (ms)": f"{fwd_avg:.2f} ± {fwd_std:.2f}",
+            "Backward (ms)": f"{bwd_avg:.2f} ± {bwd_std:.2f}"
+        })
+
+        # Cleanup
+        del model, input_ids
         if device.type == 'cuda':
-            torch.cuda.synchronize()
-            
-        end_time = timer()
-        timings.append(end_time - start_time)
+            torch.cuda.empty_cache()
 
-    # 6. Statistics
-    avg_time = statistics.mean(timings)
-    std_dev = statistics.stdev(timings) if len(timings) > 1 else 0.0
+    # Use utility to print the table
+    utils.print_results_table(results)
 
-    print("-" * 40)
-    print(f"Results for Mode: {args.mode.upper()}")
-    print(f"Configuration: Batch={args.batch_size}, SeqLen={args.context_length}, d_model={args.d_model}, Layers={args.num_layers}")
-    print(f"Average Time: {avg_time*1000:.4f} ms")
-    print(f"Std Dev:      {std_dev*1000:.4f} ms")
-    print("-" * 40)
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Benchmark BasicsTransformerLM Forward/Backward Passes")
-
-    # Hyperparameters
+def main():
+    parser = argparse.ArgumentParser(description="CS336 Assignment 2 Benchmark")
+    
+    # Mode selection
+    parser.add_argument("--suite", action="store_true", help="Run the full table generation (Part b)")
+    
+    # Arguments for Single Run (Part a)
+    parser.add_argument("--mode", type=str, default="forward", choices=["forward", "backward"])
     parser.add_argument("--vocab_size", type=int, default=10000)
-    parser.add_argument("--context_length", type=int, default=512)
+    parser.add_argument("--batch_size", type=int, default=4)
+    parser.add_argument("--context_length", type=int, default=128)
     parser.add_argument("--d_model", type=int, default=512)
     parser.add_argument("--num_layers", type=int, default=6)
     parser.add_argument("--num_heads", type=int, default=8)
     parser.add_argument("--d_ff", type=int, default=2048)
-    
-    # Benchmark settings
-    parser.add_argument("--batch_size", type=int, default=16)
-    parser.add_argument("--mode", type=str, choices=["forward", "backward"], default="forward", 
-                        help="Measure 'forward' pass only, or 'backward' (which includes forward + backward)")
     parser.add_argument("--warmup_steps", type=int, default=5)
     parser.add_argument("--num_steps", type=int, default=10)
-
+    
     args = parser.parse_args()
     
-    # Validation
-    if args.d_model % args.num_heads != 0:
-        raise ValueError(f"d_model ({args.d_model}) must be divisible by num_heads ({args.num_heads})")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device.type == 'cpu':
+        logger.warning("WARNING: Running on CPU. Results will be slow.")
 
-    benchmark(args)
+    # --- EXECUTION BRANCH ---
+    if args.suite:
+        # Run Part (b): The Table (Filtered for CPU)
+        run_suite(device)
+    else:
+        # Run Part (a): The Single Deliverable
+        logger.info(f"Running Single Benchmark ({args.mode}) on {device}...")
+        
+        model = BasicsTransformerLM(
+            vocab_size=args.vocab_size,
+            context_length=args.context_length,
+            d_model=args.d_model,
+            num_layers=args.num_layers,
+            num_heads=args.num_heads,
+            d_ff=args.d_ff,
+            rope_theta=10000.0,
+        ).to(device)
+
+        input_ids = utils.generate_batch(args.vocab_size, args.batch_size, args.context_length, device)
+        
+        avg, std = utils.benchmark_pass(
+            model, input_ids, args.mode, 
+            warmup_steps=args.warmup_steps, 
+            num_steps=args.num_steps
+        )
+        
+        print("-" * 40)
+        print(f"Mode: {args.mode.upper()}")
+        print(f"Time: {avg:.4f} ms ± {std:.4f} ms")
+        print("-" * 40)
+
+if __name__ == "__main__":
+    main()

@@ -5,11 +5,12 @@ import torch
 import logging
 import timeit
 import statistics
+import datetime 
+import pandas as pd
 
 # -----------------------------------------------------------------------------
 # Path Setup
 # -----------------------------------------------------------------------------
-# Ensure we can import from the current directory and the parent directory
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(current_dir)
@@ -25,8 +26,7 @@ except ImportError:
         print("Error: Could not import BasicsTransformerLM. Check your folder structure.")
         sys.exit(1)
 
-# 2. Import Utils (Required for Suite)
-# We try to import benchmark_utils. If it fails, suite mode will crash, but single mode works.
+# 2. Import Utils
 try:
     import benchmark_utils as utils
 except ImportError:
@@ -37,7 +37,7 @@ logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
 # -----------------------------------------------------------------------------
-# PART A: Single Run Benchmark (With NVTX for Profiling)
+# PART A: Single Run Benchmark
 # -----------------------------------------------------------------------------
 def run_single(args, device):
     logger.info(f"Initializing model on {device}...")
@@ -109,21 +109,19 @@ def run_single(args, device):
     print("-" * 40)
 
 # -----------------------------------------------------------------------------
-# PART B: Full Suite (Uses benchmark_utils)
+# PART B: Full Suite
 # -----------------------------------------------------------------------------
 def run_suite(device):
     if utils is None:
         logger.error("CRITICAL ERROR: 'benchmark_utils.py' not found.")
-        logger.error("You cannot run --suite without benchmark_utils.py in this folder.")
         sys.exit(1)
 
     logger.info(f"Starting Benchmark Suite on {device}...")
     
     all_specs = utils.get_model_specs()
     
-    # Auto-select models based on device
     if device.type == 'cuda':
-        specs = all_specs # Run ALL models on GPU
+        specs = all_specs 
     else:
         logger.warning("Running on CPU: Restricting to 'small' and 'medium' only.")
         specs = {k: all_specs[k] for k in ["small", "medium"] if k in all_specs}
@@ -133,6 +131,12 @@ def run_suite(device):
     BATCH_SIZE = 4
     CONTEXT_LENGTH = 128
     
+    # ==========================================
+    # SETTINGS: CHANGE THIS FOR YOUR ASSIGNMENT
+    # Set to 0 for "Cold Start", 5 for "Baseline"
+    CURRENT_WARMUP = 0 
+    # ==========================================
+
     for size_name, config in specs.items():
         logger.info(f"Benchmarking {size_name.upper()}...")
         
@@ -150,10 +154,14 @@ def run_suite(device):
             input_ids = utils.generate_batch(VOCAB_SIZE, BATCH_SIZE, CONTEXT_LENGTH, device)
 
             # Measure Forward
-            fwd_avg, fwd_std = utils.benchmark_pass(model, input_ids, "forward", warmup_steps=5, num_steps=10)
+            fwd_avg, fwd_std = utils.benchmark_pass(
+                model, input_ids, "forward", warmup_steps=CURRENT_WARMUP, num_steps=10
+            )
             
             # Measure Backward
-            bwd_avg, bwd_std = utils.benchmark_pass(model, input_ids, "backward", warmup_steps=5, num_steps=10)
+            bwd_avg, bwd_std = utils.benchmark_pass(
+                model, input_ids, "backward", warmup_steps=CURRENT_WARMUP, num_steps=10
+            )
             
             results.append({
                 "Size": size_name,
@@ -165,7 +173,7 @@ def run_suite(device):
                 "Backward (ms)": f"{bwd_avg:.2f} ± {bwd_std:.2f}"
             })
 
-            # Cleanup to prevent OOM
+            # Normal cleanup
             del model, input_ids
             if device.type == 'cuda':
                 torch.cuda.empty_cache()
@@ -173,11 +181,25 @@ def run_suite(device):
         except RuntimeError as e:
             if "out of memory" in str(e):
                 logger.error(f"OOM for {size_name}")
-                results.append({"Size": size_name, "Forward (ms)": "OOM", "Backward (ms)": "OOM"})
+                
+                # Crash Cleanup Logic
+                if 'model' in locals(): del model
+                if 'input_ids' in locals(): del input_ids
+                import gc
+                gc.collect()
                 torch.cuda.empty_cache()
+
+                results.append({"Size": size_name, "Forward (ms)": "OOM", "Backward (ms)": "OOM"})
             else:
                 raise e
 
+    # --- SAVE RESULTS ---
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    filename = f"benchmark_results_no_warmp_{timestamp}.csv"
+    df = pd.DataFrame(results)
+    df.to_csv(filename, index=False)
+    logger.info(f"Results saved to: {filename}")
+    
     utils.print_results_table(results)
 
 # -----------------------------------------------------------------------------

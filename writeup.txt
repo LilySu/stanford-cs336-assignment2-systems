@@ -1,0 +1,40 @@
+uv run --no-sync python benchmark.py --suite
+Starting Benchmark Suite on cuda...
+Benchmarking SMALL...
+number of non-embedding parameters: 120.95M
+Benchmarking MEDIUM...
+number of non-embedding parameters: 412.94M
+Benchmarking LARGE...
+number of non-embedding parameters: 956.61M
+Benchmarking XL...
+number of non-embedding parameters: 1982.24M
+Benchmarking 2.7B...
+number of non-embedding parameters: 3381.21M
+OOM for 2.7B
+
+==================== MARKDOWN TABLE ====================
+| Size   |   d_model |   d_ff |   num_layers |   num_heads | Forward (ms)   | Backward (ms)    |
+|:-------|----------:|-------:|-------------:|------------:|:---------------|:-----------------|
+| small  |       768 |   3072 |           12 |          12 | 19.72 ± 0.60   | 52.73 ± 4.32     |
+| medium |      1024 |   4096 |           24 |          16 | 46.00 ± 0.45   | 149.57 ± 2.28    |
+| large  |      1280 |   5120 |           36 |          20 | 117.53 ± 9.53  | 313.74 ± 11.30   |
+| xl     |      1600 |   6400 |           48 |          25 | 195.44 ± 2.16  | 36592.28 ± 34.98 |
+| 2.7B   |       nan |    nan |          nan |         nan | OOM            | OOM              |
+
+==================== LATEX TABLE ====================
+generated new fontManager
+\begin{table}
+\caption{Benchmark Results}
+\label{tab:benchmarks}
+\begin{tabular}{lrrrrll}
+\toprule
+Size & d_model & d_ff & num_layers & num_heads & Forward (ms) & Backward (ms) \\
+\midrule
+small & 768.00 & 3072.00 & 12.00 & 12.00 & 19.72 ± 0.60 & 52.73 ± 4.32 \\
+medium & 1024.00 & 4096.00 & 24.00 & 16.00 & 46.00 ± 0.45 & 149.57 ± 2.28 \\
+large & 1280.00 & 5120.00 & 36.00 & 20.00 & 117.53 ± 9.53 & 313.74 ± 11.30 \\
+xl & 1600.00 & 6400.00 & 48.00 & 25.00 & 195.44 ± 2.16 & 36592.28 ± 34.98 \\
+2.7B & NaN & NaN & NaN & NaN & OOM & OOM \\
+\bottomrule
+\end{tabular}
+\end{table}

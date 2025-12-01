@@ -3,38 +3,132 @@ import sys
 import os
 import torch
 import logging
+import timeit
+import statistics
 
-# Ensure we can import from cs336_basics and local utils
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# -----------------------------------------------------------------------------
+# Path Setup
+# -----------------------------------------------------------------------------
+# Ensure we can import from the current directory and the parent directory
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(current_dir)
+sys.path.append(parent_dir)
 
-from cs336_basics.model import BasicsTransformerLM
-import benchmark_utils as utils
+# 1. Import Model
+try:
+    from cs336_basics.model import BasicsTransformerLM
+except ImportError:
+    try:
+        from cs336_basics.models import BasicsTransformerLM
+    except ImportError:
+        print("Error: Could not import BasicsTransformerLM. Check your folder structure.")
+        sys.exit(1)
+
+# 2. Import Utils (Required for Suite)
+# We try to import benchmark_utils. If it fails, suite mode will crash, but single mode works.
+try:
+    import benchmark_utils as utils
+except ImportError:
+    utils = None
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')
 logger = logging.getLogger(__name__)
 
+# -----------------------------------------------------------------------------
+# PART A: Single Run Benchmark (With NVTX for Profiling)
+# -----------------------------------------------------------------------------
+def run_single(args, device):
+    logger.info(f"Initializing model on {device}...")
+    
+    model = BasicsTransformerLM(
+        vocab_size=args.vocab_size,
+        context_length=args.context_length,
+        d_model=args.d_model,
+        num_layers=args.num_layers,
+        num_heads=args.num_heads,
+        d_ff=args.d_ff,
+        rope_theta=10000.0,
+    ).to(device)
+
+    input_ids = torch.randint(
+        0, args.vocab_size, (args.batch_size, args.context_length), 
+        device=device, dtype=torch.int64
+    )
+
+    if args.mode == "backward":
+        model.train()
+        for param in model.parameters():
+            param.requires_grad = True
+    else:
+        model.eval()
+
+    def run_forward():
+        _ = model(input_ids)
+
+    def run_forward_backward():
+        model.zero_grad(set_to_none=True)
+        logits = model(input_ids)
+        loss = logits.sum() 
+        loss.backward()
+
+    step_fn = run_forward_backward if args.mode == "backward" else run_forward
+
+    # Warmup
+    for _ in range(args.warmup_steps):
+        step_fn()
+    if device.type == 'cuda':
+        torch.cuda.synchronize()
+
+    # Timing
+    timings = []
+    timer = timeit.default_timer
+
+    for i in range(args.num_steps):
+        if device.type == 'cuda':
+            torch.cuda.nvtx.range_push(f"Step {i}")
+            torch.cuda.synchronize()
+            
+        start_time = timer()
+        step_fn()
+        
+        if device.type == 'cuda':
+            torch.cuda.synchronize()
+            torch.cuda.nvtx.range_pop()
+            
+        end_time = timer()
+        timings.append(end_time - start_time)
+
+    avg_time = statistics.mean(timings)
+    std_dev = statistics.stdev(timings) if len(timings) > 1 else 0.0
+
+    print("-" * 40)
+    print(f"Mode: {args.mode.upper()}")
+    print(f"Time: {avg_time*1000:.4f} ms ± {std_dev*1000:.4f} ms")
+    print("-" * 40)
+
+# -----------------------------------------------------------------------------
+# PART B: Full Suite (Uses benchmark_utils)
+# -----------------------------------------------------------------------------
 def run_suite(device):
-    """
-    Runs the full benchmark suite for all model sizes defined in the assignment
-    and prints the table (Part b).
-    """
+    if utils is None:
+        logger.error("CRITICAL ERROR: 'benchmark_utils.py' not found.")
+        logger.error("You cannot run --suite without benchmark_utils.py in this folder.")
+        sys.exit(1)
+
     logger.info(f"Starting Benchmark Suite on {device}...")
     
-    # 1. Get all model specifications
     all_specs = utils.get_model_specs()
     
-    # 2. Filter for CPU (Small, Medium, Large only) to prevent stalling
-    #    We create a new dictionary with only the keys we can handle right now.
-    specs = {k: all_specs[k] for k in ["small", "medium"]} # , "large"
-
-    # --- WHEN YOU HAVE A GPU, UNCOMMENT THE LINE BELOW AND REMOVE THE FILTER ABOVE ---
-    # specs = all_specs 
-    # -------------------------------------------------------------------------------
+    # Auto-select models based on device
+    if device.type == 'cuda':
+        specs = all_specs # Run ALL models on GPU
+    else:
+        logger.warning("Running on CPU: Restricting to 'small' and 'medium' only.")
+        specs = {k: all_specs[k] for k in ["small", "medium"] if k in all_specs}
 
     results = []
-
-    # Constants for the suite
     VOCAB_SIZE = 10000
     BATCH_SIZE = 4
     CONTEXT_LENGTH = 128
@@ -42,7 +136,6 @@ def run_suite(device):
     for size_name, config in specs.items():
         logger.info(f"Benchmarking {size_name.upper()}...")
         
-        # Initialize Model
         try:
             model = BasicsTransformerLM(
                 vocab_size=VOCAB_SIZE,
@@ -54,48 +147,47 @@ def run_suite(device):
                 rope_theta=10000.0,
             ).to(device)
 
+            input_ids = utils.generate_batch(VOCAB_SIZE, BATCH_SIZE, CONTEXT_LENGTH, device)
+
+            # Measure Forward
+            fwd_avg, fwd_std = utils.benchmark_pass(model, input_ids, "forward", warmup_steps=5, num_steps=10)
+            
+            # Measure Backward
+            bwd_avg, bwd_std = utils.benchmark_pass(model, input_ids, "backward", warmup_steps=5, num_steps=10)
+            
+            results.append({
+                "Size": size_name,
+                "d_model": config["d_model"],
+                "d_ff": config["d_ff"],
+                "num_layers": config["num_layers"],
+                "num_heads": config["num_heads"],
+                "Forward (ms)": f"{fwd_avg:.2f} ± {fwd_std:.2f}",
+                "Backward (ms)": f"{bwd_avg:.2f} ± {bwd_std:.2f}"
+            })
+
+            # Cleanup to prevent OOM
+            del model, input_ids
+            if device.type == 'cuda':
+                torch.cuda.empty_cache()
+
         except RuntimeError as e:
             if "out of memory" in str(e):
                 logger.error(f"OOM for {size_name}")
                 results.append({"Size": size_name, "Forward (ms)": "OOM", "Backward (ms)": "OOM"})
                 torch.cuda.empty_cache()
-                continue
-            raise e
+            else:
+                raise e
 
-        # Generate Batch
-        input_ids = utils.generate_batch(VOCAB_SIZE, BATCH_SIZE, CONTEXT_LENGTH, device)
-
-        # Forward
-        fwd_avg, fwd_std = utils.benchmark_pass(model, input_ids, "forward", warmup_steps=5, num_steps=10)
-        
-        # Backward
-        bwd_avg, bwd_std = utils.benchmark_pass(model, input_ids, "backward", warmup_steps=5, num_steps=10)
-        
-        results.append({
-            "Size": size_name,
-            "d_model": config["d_model"],
-            "d_ff": config["d_ff"],
-            "num_layers": config["num_layers"],
-            "num_heads": config["num_heads"],
-            "Forward (ms)": f"{fwd_avg:.2f} ± {fwd_std:.2f}",
-            "Backward (ms)": f"{bwd_avg:.2f} ± {bwd_std:.2f}"
-        })
-
-        # Cleanup
-        del model, input_ids
-        if device.type == 'cuda':
-            torch.cuda.empty_cache()
-
-    # Use utility to print the table
     utils.print_results_table(results)
 
+# -----------------------------------------------------------------------------
+# Main Entry Point
+# -----------------------------------------------------------------------------
 def main():
-    parser = argparse.ArgumentParser(description="CS336 Assignment 2 Benchmark")
-    
-    # Mode selection
+    parser = argparse.ArgumentParser()
     parser.add_argument("--suite", action="store_true", help="Run the full table generation (Part b)")
     
-    # Arguments for Single Run (Part a)
+    # Arguments for Single Run
     parser.add_argument("--mode", type=str, default="forward", choices=["forward", "backward"])
     parser.add_argument("--vocab_size", type=int, default=10000)
     parser.add_argument("--batch_size", type=int, default=4)
@@ -110,39 +202,11 @@ def main():
     args = parser.parse_args()
     
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    if device.type == 'cpu':
-        logger.warning("WARNING: Running on CPU. Results will be slow.")
 
-    # --- EXECUTION BRANCH ---
     if args.suite:
-        # Run Part (b): The Table (Filtered for CPU)
         run_suite(device)
     else:
-        # Run Part (a): The Single Deliverable
-        logger.info(f"Running Single Benchmark ({args.mode}) on {device}...")
-        
-        model = BasicsTransformerLM(
-            vocab_size=args.vocab_size,
-            context_length=args.context_length,
-            d_model=args.d_model,
-            num_layers=args.num_layers,
-            num_heads=args.num_heads,
-            d_ff=args.d_ff,
-            rope_theta=10000.0,
-        ).to(device)
-
-        input_ids = utils.generate_batch(args.vocab_size, args.batch_size, args.context_length, device)
-        
-        avg, std = utils.benchmark_pass(
-            model, input_ids, args.mode, 
-            warmup_steps=args.warmup_steps, 
-            num_steps=args.num_steps
-        )
-        
-        print("-" * 40)
-        print(f"Mode: {args.mode.upper()}")
-        print(f"Time: {avg:.4f} ms ± {std:.4f} ms")
-        print("-" * 40)
+        run_single(args, device)
 
 if __name__ == "__main__":
     main()

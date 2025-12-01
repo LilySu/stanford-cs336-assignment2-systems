@@ -69,5 +69,14 @@ should be able to unzip your submitted tarball and run
 uv venv --python 3.11.5
 
 source .venv/bin/activate
+.venv/Scripts/Activate.ps1   
+
+$env:Path += ";C:\Program Files\NVIDIA Corporation\Nsight Systems 2025.3.2\target-windows-x64"
+
+uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
+
+ uv run python -c "import torch; print(f'CUDA Available: {torch.cuda.is_available()}')"
+
+uv run --no-sync nsys profile -o result_final python benchmark.py
 
 python cs336_systems/benchmark.py --suite

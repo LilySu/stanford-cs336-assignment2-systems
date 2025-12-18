@@ -7,6 +7,11 @@ import timeit
 import statistics
 import datetime 
 import pandas as pd
+import cs336_basics.model
+from cs336_basics.model import BasicsTransformerLM
+import benchmark_utils as utils
+from scaled_dot_product_attention import annotated_scaled_dot_product_attention
+
 
 # -----------------------------------------------------------------------------
 # Path Setup
@@ -16,21 +21,12 @@ parent_dir = os.path.dirname(current_dir)
 sys.path.append(current_dir)
 sys.path.append(parent_dir)
 
-# 1. Import Model
-try:
-    from cs336_basics.model import BasicsTransformerLM
-except ImportError:
-    try:
-        from cs336_basics.models import BasicsTransformerLM
-    except ImportError:
-        print("Error: Could not import BasicsTransformerLM. Check your folder structure.")
-        sys.exit(1)
 
-# 2. Import Utils
-try:
-    import benchmark_utils as utils
-except ImportError:
-    utils = None
+
+# Swap the implementation
+cs336_basics.model.scaled_dot_product_attention = annotated_scaled_dot_product_attention
+
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')

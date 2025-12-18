@@ -80,3 +80,74 @@ uv pip install torch torchvision --index-url https://download.pytorch.org/whl/cu
 uv run --no-sync nsys profile -o result_final python benchmark.py
 
 python cs336_systems/benchmark.py --suite
+
+
+uv run nsys profile --force-overwrite true -o result python benchmark.py
+
+
+
+
+
+# Profile a single configuration
+nsys profile -o small_forward --trace=cuda,nvtx python profile_benchmark.py --model_size small --context_length 128 --mode forward
+
+# Export to CSV
+nsys stats --report cuda_gpu_kern_sum --format csv small_forward.nsys-rep > small_forward_kernels.csv
+
+# Analyze
+python analyze_nsys.py small_forward_kernels.csv
+
+
+WSL:
+python3 -m venv cs336-env
+source cs336-env/bin/activate
+
+# Create virtual environment
+python3 -m venv cs336-env
+
+# Activate it
+source cs336-env/bin/activate
+
+# Install PyTorch with CUDA (adjust CUDA version to match your system)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install other dependencies
+pip install einops jaxtyping pandas
+
+cd cs336_systems
+
+
+
+# Make executable
+chmod +x run_all_profiles.sh
+
+./run_all_profiles.sh
+
+sudo apt update
+sudo apt install nsight-systems-cli
+
+
+
+WSL
+
+# Install the 2024.6.2 version (stable and recent)
+sudo apt install -y nsight-systems-2024.6.2
+
+# Verify it works
+nsys --version
+
+# Make sure you're in the virtual environment
+source /mnt/c/Users/lilyx/git/stanford-cs336-assignment2-systems/cs336-env/bin/activate
+
+# Install PyTorch with CUDA support
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+
+# Install other dependencies
+pip3 install einx einops jaxtyping pandas numpy
+
+
+Powershell
+
+which python
+pip3 install einx einops jaxtyping pandas numpy
+Remove-Item -Path .\nsys_profiles_win\ -Recurse -Force

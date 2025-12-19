@@ -3,6 +3,7 @@ import sys
 import os
 import torch
 import logging
+from contextlib import nullcontext
 
 # -----------------------------------------------------------------------------
 # Path Setup
@@ -25,136 +26,146 @@ MODEL_SPECS = {
     "large": {"d_model": 2048, "num_layers": 24, "num_heads": 32, "d_ff": 8192},
 }
 
-def profile_forward_pass(model, input_ids, device, num_iterations=10):
-    """Profile forward pass only (inference)"""
-    model.eval()
-    
-    # Warmup
-    with torch.no_grad():
-        for _ in range(3):
-            _ = model(input_ids)
-    
-    if device.type == 'cuda':
-        torch.cuda.synchronize()
-    
-    # Profiled iterations
-    with torch.no_grad():
-        for i in range(num_iterations):
-            torch.cuda.nvtx.range_push(f"Forward_Pass_Iteration_{i}")
-            _ = model(input_ids)
-            if device.type == 'cuda':
-                torch.cuda.synchronize()
-            torch.cuda.nvtx.range_pop()
+def get_autocast_context(device, enable_mixed_precision):
+    """Returns the autocast context for BF16 if enabled."""
+    if enable_mixed_precision and device.type == 'cuda':
+        return torch.amp.autocast(device_type='cuda', dtype=torch.bfloat16)
+    return nullcontext()
 
-def profile_forward_backward(model, input_ids, device, num_iterations=10):
-    """Profile forward + backward pass (training without optimizer)"""
-    model.train()
-    for param in model.parameters():
-        param.requires_grad = True
+def benchmark_run(model, input_ids, device, mixed_precision, mode, num_iterations, profile_memory=False):
+    """
+    Unified runner for profiling compute, timing, and memory.
+    Handles NVTX markers for Nsight Systems and CUDA Events for console timing.
+    """
     
-    # Warmup
-    for _ in range(3):
-        model.zero_grad(set_to_none=True)
-        logits = model(input_ids)
-        loss = logits.sum()
-        loss.backward()
-    
-    if device.type == 'cuda':
-        torch.cuda.synchronize()
-    
-    # Profiled iterations
-    for i in range(num_iterations):
-        torch.cuda.nvtx.range_push(f"Training_Step_{i}")
+    # 1. Setup Model State
+    if mode == "forward":
+        model.eval()
+    else:
+        model.train()
+        for param in model.parameters(): 
+            param.requires_grad = True
+
+    # 2. Setup Context & Optimizer
+    ctx = get_autocast_context(device, mixed_precision)
+    optimizer = None
+    if mode == "full_training":
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
+    # --- Helper: Defines a single step with NVTX tagging ---
+    def run_step(step_idx):
+        # Outer NVTX Range
+        range_name = f"{mode}_step_{step_idx}"
+        torch.cuda.nvtx.range_push(range_name)
         
-        torch.cuda.nvtx.range_push(f"Forward")
-        model.zero_grad(set_to_none=True)
-        logits = model(input_ids)
-        loss = logits.sum()
-        torch.cuda.nvtx.range_pop()
-        
-        torch.cuda.nvtx.range_push(f"Backward")
-        loss.backward()
-        torch.cuda.nvtx.range_pop()
-        
+        # A. Forward
+        torch.cuda.nvtx.range_push("Forward")
+        if mode == "full_training": 
+            optimizer.zero_grad(set_to_none=True)
+        elif mode == "forward_backward": 
+            model.zero_grad(set_to_none=True)
+            
+        with ctx:
+            logits = model(input_ids)
+            if mode != "forward":
+                loss = logits.sum()
+        torch.cuda.nvtx.range_pop() # End Forward
+
+        # B. Backward
+        if mode != "forward":
+            torch.cuda.nvtx.range_push("Backward")
+            loss.backward()
+            torch.cuda.nvtx.range_pop() # End Backward
+
+        # C. Optimizer
+        if mode == "full_training":
+            torch.cuda.nvtx.range_push("Optimizer_Step")
+            optimizer.step()
+            torch.cuda.nvtx.range_pop() # End Optimizer
+
+        # Sync within the step (optional, but good for nsys visualization boundaries)
         if device.type == 'cuda':
             torch.cuda.synchronize()
-        torch.cuda.nvtx.range_pop()
+            
+        torch.cuda.nvtx.range_pop() # End Outer Range
 
-def profile_full_training_step(model, input_ids, device, learning_rate=1e-4, num_iterations=10):
-    """Profile forward + backward + optimizer step"""
-    model.train()
-    for param in model.parameters():
-        param.requires_grad = True
+    # 3. Warmup (Run 3 times to stabilize clock/caches)
+    for i in range(3):
+        run_step(i)
     
-    # Create optimizer
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
+    # =======================================================
+    # LOGIC BRANCH 1: MEMORY PROFILING (Part D)
+    # =======================================================
+    if profile_memory:
+        logger.info("Starting PyTorch Memory Recording...")
+        
+        try:
+            # Start recording
+            torch.cuda.memory._record_memory_history(max_entries=1000000)
+            
+            # Run one step to capture the memory pattern
+            run_step(999)
+            
+            # Save snapshot
+            snapshot_filename = "memory_snapshot.pickle"
+            logger.info(f"Dumping memory snapshot to {snapshot_filename}...")
+            torch.cuda.memory._dump_snapshot(snapshot_filename)
+            
+            # Stop recording
+            torch.cuda.memory._record_memory_history(enabled=None)
+            logger.info("Memory profiling complete.")
+        except AttributeError:
+            logger.error("Error: PyTorch 2.1+ required for _record_memory_history.")
+        
+        return 0.0 # Return 0 ms since we aren't timing
+
+    # =======================================================
+    # LOGIC BRANCH 2: TIMING & NSIGHT PROFILING (Part C)
+    # =======================================================
+    start_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
     
-    # Warmup
-    for _ in range(3):
-        optimizer.zero_grad(set_to_none=True)
-        logits = model(input_ids)
-        loss = logits.sum()
-        loss.backward()
-        optimizer.step()
+    # Start Timing
+    start_event.record()
     
-    if device.type == 'cuda':
-        torch.cuda.synchronize()
-    
-    # Profiled iterations
+    # Run the Loop
     for i in range(num_iterations):
-        torch.cuda.nvtx.range_push(f"Full_Training_Step_{i}")
+        run_step(i)
         
-        torch.cuda.nvtx.range_push(f"Forward")
-        optimizer.zero_grad(set_to_none=True)
-        logits = model(input_ids)
-        loss = logits.sum()
-        torch.cuda.nvtx.range_pop()
-        
-        torch.cuda.nvtx.range_push(f"Backward")
-        loss.backward()
-        torch.cuda.nvtx.range_pop()
-        
-        torch.cuda.nvtx.range_push(f"Optimizer_Step")
-        optimizer.step()
-        torch.cuda.nvtx.range_pop()
-        
-        if device.type == 'cuda':
-            torch.cuda.synchronize()
-        torch.cuda.nvtx.range_pop()
+    end_event.record()
+    torch.cuda.synchronize()
+    
+    # Calculate Average
+    total_time_ms = start_event.elapsed_time(end_event)
+    return total_time_ms / num_iterations
 
 def main():
-    parser = argparse.ArgumentParser(description="Profile Transformer model with nsys")
+    parser = argparse.ArgumentParser(description="CS336 Profiling Script")
     parser.add_argument("--model_size", type=str, default="small", 
-                       choices=["small", "medium", "large"],
-                       help="Model size to profile")
-    parser.add_argument("--context_length", type=int, default=128,
-                       choices=[128, 256, 512, 1024],
-                       help="Context length")
-    parser.add_argument("--batch_size", type=int, default=4,
-                       help="Batch size")
-    parser.add_argument("--vocab_size", type=int, default=10000,
-                       help="Vocabulary size")
-    parser.add_argument("--mode", type=str, default="forward",
-                       choices=["forward", "forward_backward", "full_training"],
-                       help="Profiling mode")
-    parser.add_argument("--num_iterations", type=int, default=10,
-                       help="Number of iterations to profile")
+                        choices=["small", "medium", "large"], help="Model size config")
+    parser.add_argument("--context_length", type=int, default=128, help="Context length")
+    parser.add_argument("--batch_size", type=int, default=4, help="Batch size")
+    parser.add_argument("--vocab_size", type=int, default=10000, help="Vocabulary size")
+    parser.add_argument("--mode", type=str, default="forward_backward", 
+                        choices=["forward", "forward_backward", "full_training"], 
+                        help="Operation mode to profile")
+    parser.add_argument("--num_iterations", type=int, default=10, help="Iterations to average over")
+    
+    # --- New Flags ---
+    parser.add_argument("--mixed_precision", action="store_true", help="Enable BF16 Mixed Precision (Part C)")
+    parser.add_argument("--profile_memory", action="store_true", help="Generate memory_snapshot.pickle (Part D)")
     
     args = parser.parse_args()
     
+    # Device Setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
     if device.type != 'cuda':
-        logger.error("CUDA device required for nsys profiling")
-        sys.exit(1)
+        logger.warning("WARNING: CUDA not available. Profiling results will be invalid.")
     
-    logger.info(f"Profiling {args.model_size} model with context_length={args.context_length}")
-    logger.info(f"Mode: {args.mode}")
-    
-    # Get model configuration
+    # Init Model
     config = MODEL_SPECS[args.model_size]
+    logger.info(f"Initializing {args.model_size} model on {device}...")
     
-    # Create model
     model = BasicsTransformerLM(
         vocab_size=args.vocab_size,
         context_length=args.context_length,
@@ -165,25 +176,26 @@ def main():
         rope_theta=10000.0,
     ).to(device)
     
-    # Create input
+    # Init Data
     input_ids = torch.randint(
         0, args.vocab_size, 
         (args.batch_size, args.context_length), 
-        device=device, 
-        dtype=torch.int64
+        device=device, dtype=torch.int64
     )
     
-    logger.info("Starting profiling...")
+    logger.info(f"Running Benchmark | Mode: {args.mode} | Mixed Precision: {args.mixed_precision}")
     
-    # Profile based on mode
-    if args.mode == "forward":
-        profile_forward_pass(model, input_ids, device, args.num_iterations)
-    elif args.mode == "forward_backward":
-        profile_forward_backward(model, input_ids, device, args.num_iterations)
-    elif args.mode == "full_training":
-        profile_full_training_step(model, input_ids, device, args.num_iterations)
+    # Run Benchmark
+    avg_time = benchmark_run(
+        model, input_ids, device, 
+        args.mixed_precision, args.mode, 
+        args.num_iterations, args.profile_memory
+    )
     
-    logger.info("Profiling complete!")
+    # Report Results
+    if not args.profile_memory:
+        precision_tag = "BF16" if args.mixed_precision else "FP32"
+        print(f"\nRESULT | {args.model_size} | {args.mode} | {precision_tag} | {avg_time:.4f} ms/iter\n")
 
 if __name__ == "__main__":
     main()

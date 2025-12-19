@@ -16,6 +16,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from cs336_basics.model import BasicsTransformerLM
 from cs336_basics.optimizer import AdamW, get_cosine_lr
 from cs336_basics.nn_utils import cross_entropy, clip_gradient
+from dotenv import load_dotenv 
+
+# Load environment variables from .env file
+load_dotenv()  
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(message)s')

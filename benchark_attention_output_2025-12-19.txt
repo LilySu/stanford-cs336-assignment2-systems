@@ -1,0 +1,53 @@
+ python .\benchmark_attention.py
+Created output directory: assignment_results
+===========================================================
+Running Attention Benchmark on cuda
+Saving records to: assignment_results\attention_benchmark.csv
+===========================================================
+C:\Users\lilyx\git\stanford-cs336-assignment2-systems\.venv\Lib\site-packages\torch\autograd\graph.py:823: UserWarning: Attempting to run cuBLAS, but there was no current CUDA context! Attempting to set the primary context... (Triggered internally at C:\actions-runner\_work\pytorch\pytorch\pytorch\aten\src\ATen\cuda\CublasHandlePool.cpp:180.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+Benchmarking: B=8, Seq=256, D=16             | Fwd: 0.16ms | Bwd: 0.44ms | Mem: 12.75 MB
+Benchmarking: B=8, Seq=1024, D=16            | Fwd: 1.11ms | Bwd: 2.72ms | Mem: 82.75 MB
+Benchmarking: B=8, Seq=4096, D=16            | Fwd: 13.15ms | Bwd: 24.67ms | Mem: 1.03 GB
+Benchmarking: B=8, Seq=8192, D=16            | Fwd: 36.47ms | Bwd: 70.20ms | Mem: 4.04 GB
+Benchmarking: B=8, Seq=16384, D=16           | OOM ERROR
+Benchmarking: B=8, Seq=256, D=32             | Fwd: 0.57ms | Bwd: 1.54ms | Mem: 8.06 GB
+Benchmarking: B=8, Seq=1024, D=32            | Fwd: 0.94ms | Bwd: 2.90ms | Mem: 85.25 MB
+Benchmarking: B=8, Seq=4096, D=32            | Fwd: 17.92ms | Bwd: 23.29ms | Mem: 1.04 GB
+Benchmarking: B=8, Seq=8192, D=32            | Fwd: 42.64ms | Bwd: 455.95ms | Mem: 4.05 GB
+Benchmarking: B=8, Seq=16384, D=32           | OOM ERROR
+Benchmarking: B=8, Seq=256, D=64             | Fwd: 0.41ms | Bwd: 1.06ms | Mem: 38.75 MB
+Benchmarking: B=8, Seq=1024, D=64            | Fwd: 2.13ms | Bwd: 3.37ms | Mem: 90.25 MB
+Benchmarking: B=8, Seq=4096, D=64            | Fwd: 14.92ms | Bwd: 24.28ms | Mem: 1.05 GB
+Benchmarking: B=8, Seq=8192, D=64            | Fwd: 42.54ms | Bwd: 459.81ms | Mem: 4.09 GB
+Benchmarking: B=8, Seq=16384, D=64           | OOM ERROR
+Benchmarking: B=8, Seq=256, D=128            | Fwd: 0.26ms | Bwd: 0.91ms | Mem: 57.25 MB
+Benchmarking: B=8, Seq=1024, D=128           | Fwd: 2.99ms | Bwd: 3.63ms | Mem: 100.25 MB
+Benchmarking: B=8, Seq=4096, D=128           | Fwd: 18.11ms | Bwd: 22.72ms | Mem: 1.09 GB
+Benchmarking: B=8, Seq=8192, D=128           | Fwd: 44.06ms | Bwd: 480.34ms | Mem: 4.17 GB
+Benchmarking: B=8, Seq=16384, D=128          | OOM ERROR
+
+Benchmark Complete.
+Results saved to: C:\Users\lilyx\git\stanford-cs336-assignment2-systems\assignment_results\attention_benchmark.csv
+|   Batch Size |   d_head |   seq_len | Forward (ms)   | Backward (ms)   | Memory (Bytes)   | Memory (Formatted)   |
+|-------------:|---------:|----------:|:---------------|:----------------|:-----------------|:---------------------|
+|            8 |       16 |       256 | 0.1557         | 0.4379          | 13369344         | 12.75 MB             |
+|            8 |       16 |      1024 | 1.1149         | 2.7231          | 86769664         | 82.75 MB             |
+|            8 |       16 |      4096 | 13.1508        | 24.6662         | 1101266944       | 1.03 GB              |
+|            8 |       16 |      8192 | 36.4697        | 70.2030         | 4332978176       | 4.04 GB              |
+|            8 |       16 |     16384 | OOM            | OOM             | OOM              | OOM                  |
+|            8 |       32 |       256 | 0.5729         | 1.5393          | 8654422016       | 8.06 GB              |
+|            8 |       32 |      1024 | 0.9402         | 2.8996          | 89391104         | 85.25 MB             |
+|            8 |       32 |      4096 | 17.9235        | 23.2918         | 1111752704       | 1.04 GB              |
+|            8 |       32 |      8192 | 42.6425        | 455.9540        | 4353949696       | 4.05 GB              |
+|            8 |       32 |     16384 | OOM            | OOM             | OOM              | OOM                  |
+|            8 |       64 |       256 | 0.4074         | 1.0594          | 40632320         | 38.75 MB             |
+|            8 |       64 |      1024 | 2.1343         | 3.3698          | 94633984         | 90.25 MB             |
+|            8 |       64 |      4096 | 14.9156        | 24.2792         | 1132724224       | 1.05 GB              |
+|            8 |       64 |      8192 | 42.5374        | 459.8078        | 4395892736       | 4.09 GB              |
+|            8 |       64 |     16384 | OOM            | OOM             | OOM              | OOM                  |
+|            8 |      128 |       256 | 0.2569         | 0.9082          | 60030976         | 57.25 MB             |
+|            8 |      128 |      1024 | 2.9863         | 3.6291          | 105119744        | 100.25 MB            |
+|            8 |      128 |      4096 | 18.1118        | 22.7221         | 1174667264       | 1.09 GB              |
+|            8 |      128 |      8192 | 44.0605        | 480.3419        | 4479778816       | 4.17 GB              |
+|            8 |      128 |     16384 | OOM            | OOM             | OOM              | OOM                  |

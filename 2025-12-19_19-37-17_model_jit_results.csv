@@ -1,0 +1,9 @@
+Model Size,Vanilla Fwd (ms),Compiled Fwd (ms),Speedup Fwd,Vanilla Train (ms),Compiled Train (ms),Speedup Train
+small,6.43,4.59,1.40x,27.06,26.51,1.02x
+medium,15.81,12.15,1.30x,99.39,94.45,1.05x
+
+Benchmark Results:
+| Model Size   |   Vanilla Fwd (ms) |   Compiled Fwd (ms) | Speedup Fwd   |   Vanilla Train (ms) |   Compiled Train (ms) | Speedup Train   |
+|:-------------|-------------------:|--------------------:|:--------------|---------------------:|----------------------:|:----------------|
+| small        |               6.43 |                4.59 | 1.40x         |                27.06 |                 26.51 | 1.02x           |
+| medium       |              15.81 |               12.15 | 1.30x         |                99.39 |                 94.45 | 1.05x           |

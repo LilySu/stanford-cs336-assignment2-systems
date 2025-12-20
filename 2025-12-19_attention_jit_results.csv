@@ -1,0 +1,72 @@
+d_head,seq_len,Vanilla Fwd (ms),Vanilla Bwd (ms),Compiled Fwd (ms),Compiled Bwd (ms),Speedup Fwd
+16,256,0.105,0.335,0.454,1.387,0.23x
+16,1024,0.632,1.510,0.594,1.521,1.06x
+16,4096,8.870,18.399,8.773,18.176,1.01x
+16,8192,33.819,68.915,33.850,69.040,1.00x
+16,16384,OOM,,OOM,,
+32,256,0.231,0.712,0.238,0.662,0.97x
+32,1024,0.763,1.654,0.726,1.593,1.05x
+32,4096,9.359,19.199,9.020,18.590,1.04x
+32,8192,34.405,69.868,34.266,70.511,1.00x
+32,16384,OOM,,OOM,,
+64,256,0.187,0.598,0.208,0.582,0.90x
+64,1024,0.870,1.926,0.831,1.808,1.05x
+64,4096,9.998,19.828,9.171,19.409,1.09x
+64,8192,36.459,72.429,35.090,72.130,1.04x
+64,16384,OOM,,OOM,,
+128,256,0.179,0.507,0.210,0.551,0.85x
+128,1024,0.903,1.779,0.782,1.898,1.16x
+128,4096,11.397,21.381,10.207,20.141,1.12x
+128,8192,39.905,77.598,39.424,77.058,1.01x
+128,16384,OOM,,OOM,,
+
+
+
+python3 jit_benchmark_attention.py 
+Running JIT Attention Benchmark on cuda...
+/mnt/c/Users/lilyx/git/stanford-cs336-assignment2-systems/.venv/lib/python3.10/site-packages/torch/autograd/graph.py:825: UserWarning: Attempting to run cuBLAS, but there was no current CUDA context! Attempting to set the primary context... (Triggered internally at ../aten/src/ATen/cuda/CublasHandlePool.cpp:135.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+Config: B=8, Seq=256, D=16... Done. Vanilla: 0.10ms | JIT: 0.45ms
+Config: B=8, Seq=1024, D=16... Done. Vanilla: 0.63ms | JIT: 0.59ms
+Config: B=8, Seq=4096, D=16... Done. Vanilla: 8.87ms | JIT: 8.77ms
+Config: B=8, Seq=8192, D=16... Done. Vanilla: 33.82ms | JIT: 33.85ms
+Config: B=8, Seq=16384, D=16... OOM
+Config: B=8, Seq=256, D=32... Done. Vanilla: 0.23ms | JIT: 0.24ms
+Config: B=8, Seq=1024, D=32... Done. Vanilla: 0.76ms | JIT: 0.73ms
+Config: B=8, Seq=4096, D=32... Done. Vanilla: 9.36ms | JIT: 9.02ms
+Config: B=8, Seq=8192, D=32... Done. Vanilla: 34.40ms | JIT: 34.27ms
+Config: B=8, Seq=16384, D=32... OOM
+Config: B=8, Seq=256, D=64... Done. Vanilla: 0.19ms | JIT: 0.21ms
+Config: B=8, Seq=1024, D=64... Done. Vanilla: 0.87ms | JIT: 0.83ms
+Config: B=8, Seq=4096, D=64... Done. Vanilla: 10.00ms | JIT: 9.17ms
+Config: B=8, Seq=8192, D=64... Done. Vanilla: 36.46ms | JIT: 35.09ms
+Config: B=8, Seq=16384, D=64... OOM
+Config: B=8, Seq=256, D=128... Done. Vanilla: 0.18ms | JIT: 0.21ms
+Config: B=8, Seq=1024, D=128... Done. Vanilla: 0.90ms | JIT: 0.78ms
+Config: B=8, Seq=4096, D=128... Done. Vanilla: 11.40ms | JIT: 10.21ms
+Config: B=8, Seq=8192, D=128... Done. Vanilla: 39.91ms | JIT: 39.42ms
+Config: B=8, Seq=16384, D=128... OOM
+
+Results saved to attention_jit_results.csv
+|   d_head |   seq_len | Vanilla Fwd (ms)   |   Vanilla Bwd (ms) | Compiled Fwd (ms)   |   Compiled Bwd (ms) | Speedup Fwd   |
+|---------:|----------:|:-------------------|-------------------:|:--------------------|--------------------:|:--------------|
+|       16 |       256 | 0.105              |              0.335 | 0.454               |               1.387 | 0.23x         |
+|       16 |      1024 | 0.632              |              1.51  | 0.594               |               1.521 | 1.06x         |
+|       16 |      4096 | 8.870              |             18.399 | 8.773               |              18.176 | 1.01x         |
+|       16 |      8192 | 33.819             |             68.915 | 33.850              |              69.04  | 1.00x         |
+|       16 |     16384 | OOM                |            nan     | OOM                 |             nan     | nan           |
+|       32 |       256 | 0.231              |              0.712 | 0.238               |               0.662 | 0.97x         |
+|       32 |      1024 | 0.763              |              1.654 | 0.726               |               1.593 | 1.05x         |
+|       32 |      4096 | 9.359              |             19.199 | 9.020               |              18.59  | 1.04x         |
+|       32 |      8192 | 34.405             |             69.868 | 34.266              |              70.511 | 1.00x         |
+|       32 |     16384 | OOM                |            nan     | OOM                 |             nan     | nan           |
+|       64 |       256 | 0.187              |              0.598 | 0.208               |               0.582 | 0.90x         |
+|       64 |      1024 | 0.870              |              1.926 | 0.831               |               1.808 | 1.05x         |
+|       64 |      4096 | 9.998              |             19.828 | 9.171               |              19.409 | 1.09x         |
+|       64 |      8192 | 36.459             |             72.429 | 35.090              |              72.13  | 1.04x         |
+|       64 |     16384 | OOM                |            nan     | OOM                 |             nan     | nan           |
+|      128 |       256 | 0.179              |              0.507 | 0.210               |               0.551 | 0.85x         |
+|      128 |      1024 | 0.903              |              1.779 | 0.782               |               1.898 | 1.16x         |
+|      128 |      4096 | 11.397             |             21.381 | 10.207              |              20.141 | 1.12x         |
+|      128 |      8192 | 39.905             |             77.598 | 39.424              |              77.058 | 1.01x         |
+|      128 |     16384 | OOM                |            nan     | OOM                 |             nan     | nan           |

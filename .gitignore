@@ -1,5 +1,25 @@
 .DS_Store
 
+# --- Secrets (Never commit these) ---
+.env
+
+# --- Nsight Systems Profiling ---
+*.nsys-rep
+*.sqlite
+
+# --- Python & Environment ---
+__pycache__/
+*.pyc
+
+# --- Weights & Biases ---
+wandb/
+
+# --- Project Data & Outputs (from train.py) ---
+out/
+data/
+*.bin
+*.pt
+
 # --- Virtual Environments (Dependencies) ---
 .venv/
 venv/

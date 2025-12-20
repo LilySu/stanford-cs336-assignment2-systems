@@ -97,37 +97,6 @@ nsys stats --report cuda_gpu_kern_sum --format csv small_forward.nsys-rep > smal
 # Analyze
 python analyze_nsys.py small_forward_kernels.csv
 
-
-WSL:
-python3 -m venv cs336-env
-source cs336-env/bin/activate
-
-# Create virtual environment
-python3 -m venv cs336-env
-
-# Activate it
-source cs336-env/bin/activate
-
-# Install PyTorch with CUDA (adjust CUDA version to match your system)
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# Install other dependencies
-pip install einops jaxtyping pandas
-
-cd cs336_systems
-
-
-
-# Make executable
-chmod +x run_all_profiles.sh
-
-./run_all_profiles.sh
-
-sudo apt update
-sudo apt install nsight-systems-cli
-
-
-
 WSL
 
 # Install the 2024.6.2 version (stable and recent)
@@ -146,8 +115,69 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 pip3 install einx einops jaxtyping pandas numpy
 
 
+WSL:
+# 1. Create the virtual environment (since it's missing)
+python3 -m venv .venv
+
+# 2. Activate it (You must see (.venv) in your prompt after this)
+source .venv/bin/activate
+
+# 3. Install PyTorch + Dependencies (INSIDE the environment)
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install einops jaxtyping pandas tiktoken wandb tqdm einx python-dotenv triton tabulate
+
+# 4. Run the benchmark
+python3 jit_benchmark_attention.py
+
+
+
+
+
+
+
+
+
+
+
+
 Powershell
 
+.\.venv\Scripts\Activate.ps1
+
 which python
-pip3 install einx einops jaxtyping pandas numpy
+pip3 install einx einops jaxtyping pandas numpy python-dotenv
 Remove-Item -Path .\nsys_profiles_win\ -Recurse -Force
+
+
+
+1.1.5 
+benchmarking_mixed_precision
+
+# Baseline FP32
+python profile_benchmark.py --model_size medium --mode full_training
+
+# Mixed Precision BF16
+python profile_benchmark.py --model_size medium --mode full_training --mixed_precision
+
+
+1.1.6
+memory_profiling
+
+# Forward Pass Only (Inference)
+python profile_memory.py --model_size large --mode forward --context_length 128 --profile_memory
+python profile_memory.py --model_size large --mode forward --context_length 256 --profile_memory
+python profile_memory.py --model_size large --mode forward --context_length 512 --profile_memory
+
+# Full Training Step
+python profile_memory.py --model_size large --mode full_training --context_length 128 --profile_memory
+python profile_memory.py --model_size large --mode full_training --context_length 256 --profile_memory
+python profile_memory.py --model_size large --mode full_training --context_length 512 --profile_memory
+
+# Part (c): Mixed Precision Profiling
+# Forward Pass
+python profile_memory.py --model_size large --mode forward --mixed_precision --context_length 128 --profile_memory
+# Full Training Step
+python profile_memory.py --model_size large --mode full_training --mixed_precision --context_length 128 --profile_memory
+
+
+
